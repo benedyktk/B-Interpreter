@@ -1,39 +1,28 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿namespace DesoloCompiler;
 
-namespace DesoloCompiler
+public enum PointerType
 {
-    public record struct Pointer(int PointerV, int PointerValueArray, bool Char)
+    Value = 0,
+    Pointer = 1,
+    Array = 2,
+    Function = 3,
+    FunctionArray = 4
+}
+
+public readonly record struct Pointer(int PointerV, PointerType type, bool Char)
+{
+    public override string ToString()
     {
-        public override string ToString()
+        string ToModify = type switch
         {
-            string ToModify = "";
-            switch (PointerValueArray)
-            {
-                case 0:
-                    ToModify = PointerV.ToString(); break;
-                case 1:
-                    ToModify = "p" + PointerV.ToString(); break;
-                case 2:
-                    ToModify = "a" + PointerV.ToString(); break;
-                case 3:
-                    ToModify = "f" + PointerV.ToString(); break;
-                case 4:
-                    ToModify = "fa" + PointerV.ToString(); break;
-                default:
-                    throw new Exception("Invalid pointer type.");
-            }
-            if (Char)
-            {
-                return ToModify + "\"";
-            }
-            else
-            {
-                return ToModify;
-            }
-        }
+            PointerType.Value => PointerV.ToString(),
+            PointerType.Pointer => "p" + PointerV,
+            PointerType.Array => "a" + PointerV,
+            PointerType.Function => "f" + PointerV,
+            PointerType.FunctionArray => "fa" + PointerV,
+            _ => throw new Exception("Invalid pointer type.")
+        };
+
+        return Char ? ToModify + "\"" : ToModify;
     }
 }

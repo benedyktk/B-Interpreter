@@ -45,28 +45,25 @@ namespace DesoloCompiler
     }
     public class OrderStack
     {
-        List<int> Main;
+        List<CType> Main;
         public OrderStack()
         {
-            Main = new List<int>();
+            Main = new List<CType>();
         }
-        public void Push(int ToPush)
+        public void Push(CType ToPush)
         {
             Main.Add(ToPush);
         }
-        public int ReadTop()
+        public CType ReadTop()
         {
-            return Main[Main.Count - 1];
+            return Main[^1];
         }
-        public int Pop()
+        public CType Pop()
         {
-            int ToReturn = ReadTop();
+            CType ToReturn = ReadTop();
             Main.RemoveAt(Main.Count - 1);
             return ToReturn;
         }
-        public int Size
-        {
-            get { return Main.Count; }
-        }
+        public int Size => Main.Count;
     }
 }

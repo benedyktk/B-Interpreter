@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
-using static System.Net.Mime.MediaTypeNames;
-
-namespace DesoloCompiler
+﻿namespace DesoloCompiler
 {
     public class Compiler
     {
         public static List<IFileLine> StringToCode(string Code)
+        {
+            var CodeLines = SplitIntoCodeLines(Code);
+            var Collection = BuildCollection(CodeLines);
+            return BuildFCode(CodeLines, Collection);
+        }
+
+        private static List<string> SplitIntoCodeLines(string Code)
         {
             string[] RawCodeLines = Code.Split(";");
             List<string> CodeLines = new List<string>();
@@ -24,328 +22,299 @@ namespace DesoloCompiler
                     CodeLines.Add(Operative);
                 }
             }
-            List<IFileLine> FCode = new List<IFileLine>();
-            Dictionary<string, int> FuncToInt = new Dictionary<string, int>();
-            Dictionary<string, int> PlaceToInt = new Dictionary<string, int>();
-            LineInfo[] Collection = new LineInfo[CodeLines.Count]; int TotalID = 0;
+
+            return CodeLines;
+        }
+
+        private static LineInfo[] BuildCollection(List<string> CodeLines)
+        {
+            LineInfo[] Collection = new LineInfo[CodeLines.Count];
+            int TotalID = 0;
             OrderStack ToUse = new OrderStack();
             for (int i = 0; i < CodeLines.Count; i++)
             {
                 string Operative = CodeLines[i];
-                if (Operative[0] == 'f' || Operative[0] == '#')
+
+                switch (Operative[0])
                 {
-                    Collection[i] = new LineInfo(1, TotalID, -5, ToUse.Size);
+                    case 'd':
+                        ToUse.Push(CType.Define);
+                        break;
+                    case 'c' when Operative[1] == 'i':
+                        ToUse.Push(CType.If);
+                        break;
+                    case 'c' when Operative[1] == 'e':
+                        ToUse.Push(CType.Else);
+                        break;
+                    case 'c' when Operative[1] == 'w':
+                        ToUse.Push(CType.Where);
+                        break;
                 }
-                else
+
+                Collection[i] = Operative[0] switch
                 {
-                    if (Operative[0] == 'd')
-                    {
-                        ToUse.Push(-1);
-                        Collection[i] = new LineInfo(0, TotalID, -1, ToUse.Size);
-                    }
-                    else if (Operative[0] == 'c')
-                    {
-                        if (Operative[1] == 'i')
-                        {
-                            ToUse.Push(0);
-                            Collection[i] = new LineInfo(1, TotalID, 0, ToUse.Size);
-                        }
-                        else if (Operative[1] == 'e')
-                        {
-                            ToUse.Push(1);
-                            Collection[i] = new LineInfo(1, TotalID, 1, ToUse.Size);
-                        }
-                        else if (Operative[1] == 'w')
-                        {
-                            ToUse.Push(2);
-                            Collection[i] = new LineInfo(1, TotalID, 2, ToUse.Size);
-                        }
-                    }
-                    else if (Operative[0] == '{')
-                    {
-                        Collection[i] = new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == -1), TotalID, ToUse.ReadTop(), ToUse.Size);
-                    }
-                    else if (Operative[0] == '}')
-                    {
-                        if (ToUse.ReadTop() == -1 || ToUse.ReadTop() == 2)
-                        {
-                            Collection[i] = new LineInfo(1, TotalID, ToUse.ReadTop(), ToUse.Size);
-                        }
-                        else
-                        {
-                            Collection[i] = new LineInfo(0, TotalID, ToUse.ReadTop(), ToUse.Size);
-                        }
-                        ToUse.Pop();
-                    }
+                    'f' or '#' => new LineInfo(1, TotalID, CType.None, ToUse.Size),
+                    'd' => new LineInfo(0, TotalID, CType.Define, ToUse.Size),
+                    'c' when Operative[1] == 'i' => new LineInfo(1, TotalID, CType.If, ToUse.Size),
+                    'c' when Operative[1] == 'e' => new LineInfo(1, TotalID, CType.Else, ToUse.Size),
+                    'c' when Operative[1] == 'w' => new LineInfo(1, TotalID, CType.Where, ToUse.Size),
+                    '{' => new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == CType.Define), TotalID, ToUse.ReadTop(), ToUse.Size),
+                    '}' => new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == CType.Define || ToUse.ReadTop() == CType.Where), TotalID, ToUse.ReadTop(), ToUse.Size),
+                    _ => throw new InvalidOperationException()
+                };
+
+                if (Operative[0] == '}')
+                {
+                    ToUse.Pop();
                 }
+
                 TotalID += Collection[i].count;
             }
+
+            return Collection;
+        }
+
+        private static List<IFileLine> BuildFCode(List<string> CodeLines, LineInfo[] Collection)
+        {
+            List<IFileLine> FCode = new List<IFileLine>();
+            Dictionary<string, int> FuncToInt = new Dictionary<string, int>();
+            Dictionary<string, int> PlaceToInt = new Dictionary<string, int>();
+
             for (int i = 0; i < CodeLines.Count; i++)
             {
                 string Operative = CodeLines[i];
                 int ReadSpot = 0;
-                if (Operative[0] == 'f')
+                switch (Operative[0])
                 {
-                    ReadSpot++;
-                    var Full = ReadUntil(Operative, ReadSpot, '(');
-                    ReadSpot = Full.rs;
-                    List<Pointer> Info = new List<Pointer>();
-                    string JIC = "";
-                    if (Full.str == "except" || Full.str == "jump")
+                    case 'f':
                     {
-                        var Function = ReadUntil2(Operative, ReadSpot);
-                        ReadSpot = Function.rs; JIC = Function.str;
-                        if (ReadSpot == Operative.Length)
+                        ReadSpot++;
+                        var Full = ReadUntil(Operative, ReadSpot, '(');
+                        ReadSpot = Full.rs;
+                        List<Pointer> Info = new List<Pointer>();
+                        string JIC = "";
+                        if (Full.str == "except" || Full.str == "jump")
                         {
-                            ReadSpot -= 2;
+                            (JIC, ReadSpot) = ReadUntil2(Operative, ReadSpot);
+                            if (ReadSpot == Operative.Length)
+                            {
+                                ReadSpot -= 2;
+                            }
                         }
-                    }
-                    while (PointerStart(Operative[ReadSpot]))
-                    {
-                        var Combo = ReadPointer(Operative, ReadSpot);
-                        ReadSpot = Combo.rs; Info.Add(Combo.pnt);
-                        if (Operative[ReadSpot] != ')')
+                        while (PointerStart(Operative[ReadSpot]))
                         {
-                            var Combo2 = ReadUntil(Operative, ReadSpot, ',');
-                            ReadSpot = Combo2.rs;
+                            var Combo = ReadPointer(Operative, ReadSpot);
+                            ReadSpot = Combo.rs; Info.Add(Combo.pnt);
+                            if (Operative[ReadSpot] != ')')
+                            {
+                                var Combo2 = ReadUntil(Operative, ReadSpot, ',');
+                                ReadSpot = Combo2.rs;
+                            }
                         }
-                    }
-                    ReadUntil(Operative, ReadSpot, ')');
-                    switch (Full.str)
-                    {
-                        case "return":
-                            switch (Info.Count)
-                            {
-                                case 0:
-                                    FCode.Add(new Return(null));
-                                    break;
-                                case 1:
-                                    FCode.Add(new Return(Info[0]));
-                                    break;
-                                default:
-                                    throw new Exception("Invalid amount of parameters in Return function.");
-                            }
-                            break;
-                        case "write":
-                            if (Info.Count > 1)
-                            {
-                                throw new Exception("Invalid amount of parameters in Write function.");
-                            }
-                            FCode.Add(new Operation(Info, new Pointer(0, 0, false), -2));
-                            break;
-                        case "jump":
-                            switch (Info.Count)
-                            {
-                                case 0:
-                                    FCode.Add(new Jump(new JumpString(JIC), new Pointer(1, 0, false), false));
-                                    break;
-                                case 1:
-                                    FCode.Add(new Jump(new JumpString(JIC), Info[0], false));
-                                    break;
-                                default:
-                                    throw new Exception("Invalid amount of parameters in Jump function.");
-                            }
-                            break;
-                        case "except":
-                            JIC = JIC.Replace('_', ' ');
-                            FCode.Add(new ExceptionLine("\"" + JIC + "\" at line " + i ));
-                            break;
-                        case "terminate":
-                            if (Info.Count != 0)
-                            {
-                                throw new Exception("Invalid amount of parameters in Terminate function.");
-                            }
-                            FCode.Add(new Jump(new JumpSpotProper(-1), new Pointer(1, 0, false), false));
-                            break;
-                        case "exceptadd":
-                            if (Info.Count != 1)
-                            {
-                                throw new Exception("Invalid amount of parameters in ExceptAdd function.");
-                            }
-                            FCode.Add(new Operation(Info, new Pointer(0, 0, false), -6));
-                            break;
-                        case "exceptsend":
-                            if (Info.Count != 0)
-                            {
-                                throw new Exception("Invalid amount of parameters in ExceptSend function.");
-                            }
-                            FCode.Add(new Operation(Info, new Pointer(0, 0, false), -6));
-                            break;
-                        case "remove":
-                            if (Info.Count != 1)
-                            {
-                                throw new Exception("Invalid amount of parameters in Remove function.");
-                            }
-                            FCode.Add(new Operation(Info, new Pointer(0, 0, false), -8));
-                            break;
-                        case "readint":
-                        case "readstring":
-                        case "readdone":
-                        case "hasval":
-                            throw new Exception("No return line of system function");
-                        default:
-                            FCode.Add(new FunctionCall(Info, null, new JumpString(Full.str)));
-                            break;
-                    }
-                }
-                else if (Operative[0] == '#')
-                {
-                    var Full = ReadPointer(Operative, 0);
-                    Pointer Destination = Full.pnt; ReadSpot = Full.rs;
-                    if (Operative[ReadSpot] != '=')
-                    {
-                        throw new Exception("Invalid post-pointer symbol.");
-                    }
-                    ReadSpot++;
-                    if (Operative[ReadSpot] == 'f')
-                    {
-                        var Rest = ReadUntil(Operative, ReadSpot + 1, '(');
-                        switch (Rest.str)
+                        ReadUntil(Operative, ReadSpot, ')');
+                        IFileLine FileLine = Full.str switch
                         {
-                            case "readint":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, -3)); break;
-                            case "readstring":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, -4)); break;
-                            case "readdone":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, -5)); break;
-                            case "return":
-                            case "write":
-                            case "jump":
-                            case "except":
-                            case "exceptadd":
-                            case "exceptsend":
-                            case "remove":
-                                throw new Exception("No return line of system function");
-                            default:
-                                ReadSpot = Rest.rs;
-                                List<Pointer> Info = new List<Pointer>();
-                                while (PointerStart(Operative[ReadSpot]))
-                                {
-                                    var Combo = ReadPointer(Operative, ReadSpot);
-                                    ReadSpot = Combo.rs; Info.Add(Combo.pnt);
-                                    if (Operative[ReadSpot] != ')')
+                            "return" when Info.Count == 0 => new Return(null),
+                            "return" when Info.Count == 1 => new Return(Info[0]),
+                            "return" => throw new Exception("Invalid amount of parameters in Return function."),
+                            "write" when Info.Count > 1 => throw new Exception("Invalid amount of parameters in Write function."),
+                            "write" => new Operation(Info, new Pointer(0, 0, false), -2),
+                            "jump" when Info.Count == 0 => new Jump(new JumpString(JIC), new Pointer(1, 0, false), false),
+                            "jump" when Info.Count == 1 => new Jump(new JumpString(JIC), Info[0], false),
+                            "jump" => throw new Exception("Invalid amount of parameters in Jump function."),
+                            "except" when Info.Count == 0 => new ExceptionLine($@"""{JIC.Replace('_', ' ')}"" at line {i}"),
+                            "except" => throw new Exception("Invalid amount of parameters in Except function."),
+                            "terminate" when Info.Count != 0 => throw new Exception("Invalid amount of parameters in Terminate function."),
+                            "terminate" => new Jump(new JumpSpotProper(-1), new Pointer(1, 0, false), false),
+                            "exceptadd" when Info.Count != 1 => throw new Exception("Invalid amount of parameters in ExceptAdd function."),
+                            "exceptadd" => new Operation(Info, new Pointer(0, 0, false), -6),
+                            "exceptsend" when Info.Count != 0 => throw new Exception("Invalid amount of parameters in ExceptSend function."),
+                            "exceptsend" => new Operation(Info, new Pointer(0, 0, false), -6),
+                            "remove" when Info.Count != 1 => throw new Exception("Invalid amount of parameters in Remove function."),
+                            "remove" => new Operation(Info, new Pointer(0, 0, false), -8),
+                            "readint" or "readstring" or "readdone" or "hasval" => throw new Exception("No return line of system function"),
+                            _ => new FunctionCall(Info, null, new JumpString(Full.str))
+                        };
+                        FCode.Add(FileLine);
+                        break;
+                    }
+                    case '#':
+                    {
+                        var Full = ReadPointer(Operative, 0);
+                        Pointer Destination = Full.pnt; ReadSpot = Full.rs;
+                        if (Operative[ReadSpot] != '=')
+                        {
+                            throw new Exception("Invalid post-pointer symbol.");
+                        }
+                        ReadSpot++;
+                        if (Operative[ReadSpot] == 'f')
+                        {
+                            var Rest = ReadUntil(Operative, ReadSpot + 1, '(');
+                            switch (Rest.str)
+                            {
+                                case "readint":
+                                    FCode.Add(new Operation(new List<Pointer>(), Destination, -3));
+                                    break;
+                                case "readstring":
+                                    FCode.Add(new Operation(new List<Pointer>(), Destination, -4));
+                                    break;
+                                case "readdone":
+                                    FCode.Add(new Operation(new List<Pointer>(), Destination, -5));
+                                    break;
+                                case "return":
+                                case "write":
+                                case "jump":
+                                case "except":
+                                case "exceptadd":
+                                case "exceptsend":
+                                case "remove":
+                                    throw new Exception("No return line of system function");
+                                default:
+                                    ReadSpot = Rest.rs;
+                                    List<Pointer> Info = new List<Pointer>();
+                                    while (PointerStart(Operative[ReadSpot]))
                                     {
-                                        var Combo2 = ReadUntil(Operative, ReadSpot, ',');
-                                        ReadSpot = Combo2.rs;
+                                        var Combo = ReadPointer(Operative, ReadSpot);
+                                        ReadSpot = Combo.rs; Info.Add(Combo.pnt);
+                                        if (Operative[ReadSpot] != ')')
+                                        {
+                                            var Combo2 = ReadUntil(Operative, ReadSpot, ',');
+                                            ReadSpot = Combo2.rs;
+                                        }
                                     }
-                                }
-                                ReadUntil(Operative, ReadSpot, ')');
-                                if (Rest.str == "hasval")
-                                {
-                                    FCode.Add(new Operation(Info, Destination, -7));
-                                }
-                                FCode.Add(new FunctionCall(Info, Destination, new JumpString(Rest.str)));
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        var UnaryOperator = ReadUntil(Operative, ReadSpot, '#');
-                        string UOp = UnaryOperator.str; ReadSpot = UnaryOperator.rs - 1;
-                        var P1 = ReadPointer(Operative, ReadSpot);
-                        List<Pointer> Arguments = new List<Pointer>();
-                        Arguments.Add(P1.pnt); ReadSpot = P1.rs;
-                        if (ReadSpot == Operative.Length)
-                        {
-                            FCode.Add(new Operation(Arguments, Destination, IdentifyUOp(UOp)));
+                                    ReadUntil(Operative, ReadSpot, ')');
+                                    if (Rest.str == "hasval")
+                                    {
+                                        FCode.Add(new Operation(Info, Destination, -7));
+                                    }
+                                    FCode.Add(new FunctionCall(Info, Destination, new JumpString(Rest.str)));
+                                    break;
+                            }
                         }
                         else
                         {
-                            var BinaryOperator = ReadUntil(Operative, ReadSpot, '#');
-                            string BOp = BinaryOperator.str; ReadSpot = BinaryOperator.rs - 1;
-                            var P2 = ReadPointer(Operative, ReadSpot);
-                            Arguments.Add(P2.pnt); ReadSpot = P2.rs;
-                            FCode.Add(new Operation(Arguments, Destination, IdentifyBOp(BOp)));
+                            var UnaryOperator = ReadUntil(Operative, ReadSpot, '#');
+                            string UOp = UnaryOperator.str; ReadSpot = UnaryOperator.rs - 1;
+                            var P1 = ReadPointer(Operative, ReadSpot);
+                            List<Pointer> Arguments = new List<Pointer>();
+                            Arguments.Add(P1.pnt); ReadSpot = P1.rs;
+                            if (ReadSpot == Operative.Length)
+                            {
+                                FCode.Add(new Operation(Arguments, Destination, IdentifyUOp(UOp)));
+                            }
+                            else
+                            {
+                                var BinaryOperator = ReadUntil(Operative, ReadSpot, '#');
+                                string BOp = BinaryOperator.str; ReadSpot = BinaryOperator.rs - 1;
+                                var P2 = ReadPointer(Operative, ReadSpot);
+                                Arguments.Add(P2.pnt); ReadSpot = P2.rs;
+                                FCode.Add(new Operation(Arguments, Destination, IdentifyBOp(BOp)));
+                            }
                         }
+
+                        break;
                     }
-                }
-                else if (Operative[0] == 'd')
-                {
-                    var TillP = ReadUntil(Operative, ReadSpot, '(');
-                    ReadSpot = TillP.rs;
-                    var TillEP = ReadUntil(Operative, ReadSpot, ')');
-                    ReadSpot = TillEP.rs;
-                    switch (TillP.str)
+                    case 'd':
                     {
-                        case "define":
-                            FuncToInt.Add(TillEP.str, FCode.Count + 1);
-                            break;
-                        case "defineplace":
-                            PlaceToInt.Add(TillEP.str, FCode.Count);
-                            break;
-                        default:
-                            throw new Exception("Invalid define line.");
-                    }
-                }
-                else if (Operative[0] == 'c')
-                {
-                    var TillP = ReadUntil(Operative, ReadSpot + 1, '(');
-                    ReadSpot = TillP.rs; string ConditionalType = TillP.str;
-                    int ctype = 0;
-                    switch(TillP.str)
-                    {
-                        case "if":
-                            ctype = 0; break;
-                        case "else":
-                            ctype = 1; break;
-                        case "while":
-                            ctype = 2; break;
-                        default:
-                            throw new Exception("Invalid conditional after c.");
-                    }
-                    int ClosingLine = -1; int Amount = 0;
-                    int StackSize = Collection[i].stacksize;
-                    for (int j = i; j < CodeLines.Count && ClosingLine == -1; j++)
-                    {
-                        if (CodeLines[j][0] == '}' && Collection[j].stacksize == StackSize && ctype == Collection[i].ctype)
+                        var TillP = ReadUntil(Operative, ReadSpot, '(');
+                        ReadSpot = TillP.rs;
+                        var TillEP = ReadUntil(Operative, ReadSpot, ')');
+                        ReadSpot = TillEP.rs;
+                        switch (TillP.str)
                         {
-                            ClosingLine = Collection[j].ID;
+                            case "define":
+                                FuncToInt.Add(TillEP.str, FCode.Count + 1);
+                                break;
+                            case "defineplace":
+                                PlaceToInt.Add(TillEP.str, FCode.Count);
+                                break;
+                            default:
+                                throw new Exception("Invalid define line.");
                         }
+
+                        break;
                     }
-                    if (ClosingLine == -1)
+                    case 'c':
                     {
-                        throw new Exception("No ending parentheses of conditional.");
-                    }
-                    var Conditional = ReadPointer(Operative, ReadSpot);
-                    ReadSpot = Conditional.rs; ReadUntil(Operative, ReadSpot, ')');
-                    FCode.Add(new Jump(new JumpSpotProper(ClosingLine + Interpreter.BoolToInt(ctype == 2)), Conditional.pnt, !(ctype == 1)));
-                }
-                else if (Operative[0] == '{' && Operative.Length == 1)
-                {
-                    if (Collection[i].ctype == -1)
-                    {
-                        FCode.Add(new ExceptionLine("Entered function body without calling it."));                        
-                    }
-                }
-                else if (Operative[0] == '}' && Operative.Length == 1)
-                {
-                    if (Collection[i].ctype == -1)
-                    {
-                        FCode.Add(new Return(null));
-                    }
-                    if (Collection[i].ctype == 2)
-                    {
+                        var TillP = ReadUntil(Operative, ReadSpot + 1, '(');
+                        ReadSpot = TillP.rs; string ConditionalType = TillP.str;
+                        CType ctype = CType.None;
+                        switch(TillP.str)
+                        {
+                            case "if":
+                                ctype = CType.If; break;
+                            case "else":
+                                ctype = CType.Else; break;
+                            case "while":
+                                ctype = CType.Where; break;
+                            default:
+                                throw new Exception("Invalid conditional after c.");
+                        }
+                        int ClosingLine = -1; int Amount = 0;
                         int StackSize = Collection[i].stacksize;
-                        int ClosingLine = -1;
-                        for (int j = i; j >= 0 && ClosingLine == -1; j--)
+                        for (int j = i; j < CodeLines.Count && ClosingLine == -1; j++)
                         {
-                            if (CodeLines[j][0] == 'c' && Collection[j].stacksize == StackSize && 2 == Collection[j].ctype)
+                            if (CodeLines[j][0] == '}' && Collection[j].stacksize == StackSize && ctype == Collection[i].ctype)
                             {
                                 ClosingLine = Collection[j].ID;
                             }
                         }
                         if (ClosingLine == -1)
                         {
-                            throw new Exception("No ending parentheses of conditional");
+                            throw new Exception("No ending parentheses of conditional.");
                         }
-                        FCode.Add(new Jump(new JumpSpotProper(ClosingLine), new Pointer(1, 0, false), false));
+                        var Conditional = ReadPointer(Operative, ReadSpot);
+                        ReadSpot = Conditional.rs; ReadUntil(Operative, ReadSpot, ')');
+                        FCode.Add(new Jump(new JumpSpotProper(ClosingLine + Interpreter.BoolToInt(ctype == CType.Where)), Conditional.pnt, ctype != CType.Else));
+                        break;
                     }
-                }
-                else
-                {
-                    throw new Exception("Invalid line start.");
+                    case '{' when Operative.Length == 1:
+                    {
+                        if (Collection[i].ctype == CType.Define)
+                        {
+                            FCode.Add(new ExceptionLine("Entered function body without calling it."));                        
+                        }
+
+                        break;
+                    }
+                    case '}' when Operative.Length == 1:
+                    {
+                        if (Collection[i].ctype == CType.Define)
+                        {
+                            FCode.Add(new Return(null));
+                        }
+                        if (Collection[i].ctype == CType.Where)
+                        {
+                            int StackSize = Collection[i].stacksize;
+                            int ClosingLine = -1;
+                            for (int j = i; j >= 0 && ClosingLine == -1; j--)
+                            {
+                                if (CodeLines[j][0] == 'c' && Collection[j].stacksize == StackSize && CType.Where == Collection[j].ctype)
+                                {
+                                    ClosingLine = Collection[j].ID;
+                                }
+                            }
+                            if (ClosingLine == -1)
+                            {
+                                throw new Exception("No ending parentheses of conditional");
+                            }
+                            FCode.Add(new Jump(new JumpSpotProper(ClosingLine), new Pointer(1, 0, false), false));
+                        }
+
+                        break;
+                    }
+                    default:
+                        throw new Exception("Invalid line start.");
                 }
             }
+
+            PatchFunctionsAndJumps(FCode, FuncToInt, PlaceToInt);
+
+            return FCode;
+        }
+
+        private static void PatchFunctionsAndJumps(List<IFileLine> FCode, Dictionary<string, int> FuncToInt, Dictionary<string, int> PlaceToInt)
+        {
             for (int i = 0; i < FCode.Count; i++)
             {
                 switch (FCode[i])
@@ -377,7 +346,7 @@ namespace DesoloCompiler
                                 ToGet = js.Place;
                                 break;
                         }
-                        if(ToGet != null)
+                        if (ToGet != null)
                         {
                             if (PlaceToInt.ContainsKey(ToGet))
                             {
@@ -392,81 +361,41 @@ namespace DesoloCompiler
                         break;
                 }
             }
-            return FCode;
         }
-        public static (Pointer pnt, int rs) ReadPointer(string Code, int ReadSpot)
+
+        private static (Pointer pnt, int rs) ReadPointer(string Code, int ReadSpot)
         {
             ReadSpot++;
             if (ReadSpot + 1 < Code.Length && Code[ReadSpot + 1] == '\"')
             {
-                return (new Pointer((int)Code[ReadSpot], 0, true), ReadSpot + 2);
+                return (new Pointer(Code[ReadSpot], 0, true), ReadSpot + 2);
             }
-            int PointerValue = 0;
+            PointerType PointerValue = PointerType.Value;
             switch (Code[ReadSpot])
             {
+                case 'f' when Code[ReadSpot..(ReadSpot + 5)] == "false":
+                    return (new Pointer(0, PointerType.Value, false), ReadSpot + 5);
+                case 't' when Code[ReadSpot..(ReadSpot + 4)] == "true":
+                    return (new Pointer(1, PointerType.Value, false), ReadSpot + 4);
+
+                case 'f' when Code[ReadSpot + 1] == 'a':
+                    PointerValue = PointerType.FunctionArray;
+                    ReadSpot += 2;
+                    break;
+
                 case 'p':
-                    PointerValue = 1;
+                    PointerValue = PointerType.Pointer;
                     ReadSpot++;
                     break;
                 case 'a':
-                    PointerValue = 2;
+                    PointerValue = PointerType.Array;
                     ReadSpot++;
                     break;
+
                 case 'f':
-                    PointerValue = 3;
+                    PointerValue = PointerType.Function;
                     ReadSpot++;
                     break;
-                case 't':
-                    ReadSpot++;
-                    if (Code[ReadSpot] == 'r')
-                    {
-                        ReadSpot++;
-                        if (Code[ReadSpot] == 'u')
-                        {
-                            ReadSpot++;
-                            if (Code[ReadSpot] == 'e')
-                            {
-                                return (new Pointer(1, 0, false), ReadSpot + 1);
-                            }
-                            else
-                            {
-                                throw new Exception("Badly spelled true.");
-                            }
-                        }
-                        else
-                        {
-                            throw new Exception("Badly spelled true.");
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception("Badly spelled true.");
-                    }
-            }
-            if (Code[ReadSpot] == 'a' && PointerValue == 3)
-            {
-                PointerValue = 4;
-                ReadSpot++;
-                if (Code[ReadSpot] == 'l')
-                {
-                    ReadSpot++;
-                    if (Code[ReadSpot] == 's')
-                    {
-                        ReadSpot++;
-                        if (Code[ReadSpot] == 'e')
-                        {
-                            return (new Pointer(0, 0, false), ReadSpot + 1);
-                        }
-                        else
-                        {
-                            throw new Exception("Badly spelled false.");
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception("Badly spelled false.");
-                    }
-                }
             }
             if (!Number(Code[ReadSpot]))
             {
@@ -485,43 +414,43 @@ namespace DesoloCompiler
             }
             return (new Pointer(int.Parse(CreatedNum), PointerValue, false), ReadSpot);
         }
-        public static (string str, int rs) ReadUntil(string Code, int ReadSpot, char c)
+
+        private static (string str, int rs) ReadUntil(string Code, int ReadSpot, char c)
         {
-            string Creatine = "";
-            while (ReadSpot < Code.Length && Code[ReadSpot] != c)
-            {
-                Creatine += Code[ReadSpot];
-                ReadSpot++;
-            }
-            if (ReadSpot == Code.Length)
+            var next = Code.IndexOf(c, ReadSpot);
+            if (next == -1)
             {
                 throw new Exception("Unexpected end of line.");
             }
-            return (Creatine, ReadSpot + 1);
+
+            return (Code[ReadSpot..next], next + 1);
         }
-        public static (string str, int rs) ReadUntil2(string Code, int ReadSpot)
+
+        private static (string str, int rs) ReadUntil2(string Code, int ReadSpot)
         {
-            string Creatine = "";
+            var start = ReadSpot;
             while (ReadSpot < Code.Length && Code[ReadSpot] != ')' && Code[ReadSpot] != ',')
             {
-                Creatine += Code[ReadSpot];
                 ReadSpot++;
             }
             if (ReadSpot == Code.Length)
             {
                 throw new Exception("Unexpected end of line.");
             }
-            return (Creatine, ReadSpot + 1);
+            return (Code[start..ReadSpot], ReadSpot + 1);
         }
-        public static bool Number(char c)
+
+        private static bool Number(char c)
         {
-            return c == '0' || c == '1' || c == '2' || c == '3' || c == '4' || c == '5' || c == '6' || c == '7' || c == '8' || c == '9' || c == '-';
+            return c is '0' or '1' or '2' or '3' or '4' or '5' or '6' or '7' or '8' or '9' or '-';
         }
-        public static bool PointerStart(char c)
+
+        private static bool PointerStart(char c)
         {
             return c == '#';
         }
-        public static int IdentifyUOp(string UOp)
+
+        private static int IdentifyUOp(string UOp)
         {
             switch (UOp)
             {
@@ -533,7 +462,8 @@ namespace DesoloCompiler
             }
             throw new Exception("Invalid unary operation name.");
         }
-        public static int IdentifyBOp(string BOp)
+
+        private static int IdentifyBOp(string BOp)
         {
             switch (BOp)
             {
@@ -553,27 +483,6 @@ namespace DesoloCompiler
                 case "<=": return 21;
             }
             throw new Exception("Invalid binary operation name.");
-        }
-    }
-    public record struct LineInfo(int count, int ID, int ctype, int stacksize)
-    {
-        public override string ToString()
-        {
-            string conditional = "";
-            switch (ctype)
-            {
-                case -5:
-                    conditional = "none"; break;
-                case -1:
-                    conditional = "define"; break;
-                case 0:
-                    conditional = "if"; break;
-                case 1:
-                    conditional = "else"; break;
-                case 2:
-                    conditional = "where"; break;
-            }
-            return "B#Lines " + count + ", B#ID " + ID + ", Ctype " + conditional + ", Layer " + stacksize;
         }
     }
 }
