@@ -8,14 +8,10 @@ class Runner
     {
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
-        string File = """
-                      cwhile(#true);
-                      {;
-                      #p0 = freadstring();
-                      fwrite(#p0);
-                      };
+        var code = """
+
                       """;
-        Interpreter MyProgram = new Interpreter(Compiler.StringToCode(File));
+        Interpreter MyProgram = new Interpreter(Compiler.StringToCode(code), Console.In, Console.Out);
         MyProgram.RunCode(0);
     }
 }

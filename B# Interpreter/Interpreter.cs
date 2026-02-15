@@ -8,12 +8,17 @@ public class Interpreter
     int Pointer;
     string ExceptionProgress;
     string ReadingProgress;
-    public Interpreter(List<IFileLine> TheCode)
+    string SubmissionProgress;
+    TextReader Input;
+    TextWriter Output;
+    public Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWriter ConsoleOut)
     {
         Vars = new Tree();
         CallStack = new Stack();
         CodeBase = TheCode;
         ExceptionProgress = ""; ReadingProgress = "";
+        Input = ConsoleIn;
+        Output = ConsoleOut;
     }
     public int PReturn(int Place)
     {
@@ -165,8 +170,16 @@ public class Interpreter
                         }
                     }
                     break;
-                case ExceptionLine el:
-                    throw new Exception(el.Problem);
+                case StringLine sl:
+                    if(sl.Type)
+                    {
+                        SubmissionProgress += sl.Text;
+                    }
+                    else
+                    {
+                        throw new Exception(sl.Text);
+                    }
+                    break;
             }
             Pointer++;
         }
@@ -194,27 +207,27 @@ public class Interpreter
                 CheckLength(0, 1, ToRun);
                 if (Vals.Count == 0)
                 {
-                    Console.WriteLine();
+                    Output.WriteLine();
                 }
                 else
                 {
                     if (ToRun.EntryPointers[0].Char)
                     {
-                        Console.Write((char)Vals[0]);
+                        Output.Write((char)Vals[0]);
                     }
                     else
                     {
-                        Console.Write(Vals[0]);
+                        Output.Write(Vals[0]);
                     }
                 }
                 break;
             case -3:
                 CheckLength(0, ToRun);
-                Set(Plc, int.Parse(Console.ReadLine()));
+                Set(Plc, int.Parse(Input.ReadLine()));
                 break;
             case -4:
                 CheckLength(0, ToRun);
-                if (ReadingProgress == "") { ReadingProgress = Console.ReadLine(); }
+                if (ReadingProgress == "") { ReadingProgress = Input.ReadLine(); }
                 Set(Plc, (int)ReadingProgress[0]); ReadingProgress = ReadingProgress.Substring(1);
                 break;
             case -5:
@@ -246,6 +259,15 @@ public class Interpreter
             case -8:
                 CheckLength(1, ToRun);
                 Remove(ToRun.EntryPointers[0]);
+                break;
+            case -9:
+                CheckLength(0, ToRun);
+                if(SubmissionProgress.Length == 0) { throw new Exception("Read from null length submission."); }
+                Set(Plc, (int)SubmissionProgress[0]); SubmissionProgress = SubmissionProgress.Substring(1);
+                break;
+            case -10:
+                CheckLength(0, ToRun);
+                Set(Plc, BoolToInt(SubmissionProgress == ""));
                 break;
             case 0:
                 CheckLength(2, ToRun);

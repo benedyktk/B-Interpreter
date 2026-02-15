@@ -47,7 +47,10 @@
                         ToUse.Push(CType.Else);
                         break;
                     case 'c' when Operative[1] == 'w':
-                        ToUse.Push(CType.Where);
+                        ToUse.Push(CType.While);
+                        break;
+                    case 'c' when Operative[1] == 'u':
+                        ToUse.Push(CType.Until);
                         break;
                 }
 
@@ -57,9 +60,10 @@
                     'd' => new LineInfo(0, TotalID, CType.Define, ToUse.Size),
                     'c' when Operative[1] == 'i' => new LineInfo(1, TotalID, CType.If, ToUse.Size),
                     'c' when Operative[1] == 'e' => new LineInfo(1, TotalID, CType.Else, ToUse.Size),
-                    'c' when Operative[1] == 'w' => new LineInfo(1, TotalID, CType.Where, ToUse.Size),
+                    'c' when Operative[1] == 'w' => new LineInfo(1, TotalID, CType.While, ToUse.Size),
+                    'c' when Operative[1] == 'u' => new LineInfo(1, TotalID, CType.Until, ToUse.Size),
                     '{' => new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == CType.Define), TotalID, ToUse.ReadTop(), ToUse.Size),
-                    '}' => new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == CType.Define || ToUse.ReadTop() == CType.Where), TotalID, ToUse.ReadTop(), ToUse.Size),
+                    '}' => new LineInfo(Interpreter.BoolToInt(ToUse.ReadTop() == CType.Define || ToUse.ReadTop() == CType.While || ToUse.ReadTop() == CType.Until), TotalID, ToUse.ReadTop(), ToUse.Size),
                     _ => throw new InvalidOperationException()
                 };
 
@@ -93,7 +97,7 @@
                         ReadSpot = Full.rs;
                         List<Pointer> Info = new List<Pointer>();
                         string JIC = "";
-                        if (Full.str == "except" || Full.str == "jump")
+                        if (Full.str == "except" || Full.str == "jump" || Full.str == "submit")
                         {
                             (JIC, ReadSpot) = ReadUntil2(Operative, ReadSpot);
                             if (ReadSpot == Operative.Length)
@@ -114,6 +118,8 @@
                         ReadUntil(Operative, ReadSpot, ')');
                         IFileLine FileLine = Full.str switch
                         {
+                            "submit" when Info.Count == 0 => new StringLine(JIC.Replace('_', ' '), true),
+                            "submit" => throw new Exception("Invalid amount of parameters in Return function."),
                             "return" when Info.Count == 0 => new Return(null),
                             "return" when Info.Count == 1 => new Return(Info[0]),
                             "return" => throw new Exception("Invalid amount of parameters in Return function."),
@@ -122,7 +128,7 @@
                             "jump" when Info.Count == 0 => new Jump(new JumpString(JIC), new Pointer(1, 0, false), false),
                             "jump" when Info.Count == 1 => new Jump(new JumpString(JIC), Info[0], false),
                             "jump" => throw new Exception("Invalid amount of parameters in Jump function."),
-                            "except" when Info.Count == 0 => new ExceptionLine($@"""{JIC.Replace('_', ' ')}"" at line {i}"),
+                            "except" when Info.Count == 0 => new StringLine($@"""{JIC.Replace('_', ' ')}"" at line {i}", false),
                             "except" => throw new Exception("Invalid amount of parameters in Except function."),
                             "terminate" when Info.Count != 0 => throw new Exception("Invalid amount of parameters in Terminate function."),
                             "terminate" => new Jump(new JumpSpotProper(-1), new Pointer(1, 0, false), false),
@@ -132,7 +138,7 @@
                             "exceptsend" => new Operation(Info, new Pointer(0, 0, false), -6),
                             "remove" when Info.Count != 1 => throw new Exception("Invalid amount of parameters in Remove function."),
                             "remove" => new Operation(Info, new Pointer(0, 0, false), -8),
-                            "readint" or "readstring" or "readdone" or "hasval" => throw new Exception("No return line of system function"),
+                            "readint" or "readstring" or "readdone" or "subread" or "subdone" or "hasval" => throw new Exception("No return line of system function"),
                             _ => new FunctionCall(Info, null, new JumpString(Full.str))
                         };
                         FCode.Add(FileLine);
@@ -157,6 +163,12 @@
                                     break;
                                 case "readstring":
                                     FCode.Add(new Operation(new List<Pointer>(), Destination, -4));
+                                    break;
+                                case "subread":
+                                    FCode.Add(new Operation(new List<Pointer>(), Destination, -9));
+                                    break;
+                                case "subdone":
+                                    FCode.Add(new Operation(new List<Pointer>(), Destination, -10));
                                     break;
                                 case "readdone":
                                     FCode.Add(new Operation(new List<Pointer>(), Destination, -5));
@@ -246,7 +258,9 @@
                             case "else":
                                 ctype = CType.Else; break;
                             case "while":
-                                ctype = CType.Where; break;
+                                ctype = CType.While; break;
+                            case "until":
+                                ctype = CType.Until; break;
                             default:
                                 throw new Exception("Invalid conditional after c.");
                         }
@@ -265,14 +279,14 @@
                         }
                         var Conditional = ReadPointer(Operative, ReadSpot);
                         ReadSpot = Conditional.rs; ReadUntil(Operative, ReadSpot, ')');
-                        FCode.Add(new Jump(new JumpSpotProper(ClosingLine + Interpreter.BoolToInt(ctype == CType.Where)), Conditional.pnt, ctype != CType.Else));
+                        FCode.Add(new Jump(new JumpSpotProper(ClosingLine + Interpreter.BoolToInt(ctype == CType.While || ctype == CType.Until)), Conditional.pnt, ctype != CType.Else && ctype != CType.Until));
                         break;
                     }
                     case '{' when Operative.Length == 1:
                     {
                         if (Collection[i].ctype == CType.Define)
                         {
-                            FCode.Add(new ExceptionLine("Entered function body without calling it."));                        
+                            FCode.Add(new StringLine("Entered function body without calling it.", false));                        
                         }
 
                         break;
@@ -283,13 +297,14 @@
                         {
                             FCode.Add(new Return(null));
                         }
-                        if (Collection[i].ctype == CType.Where)
+                        if (Collection[i].ctype == CType.While || Collection[i].ctype == CType.Until)
                         {
+                            CType Current = Collection[i].ctype;
                             int StackSize = Collection[i].stacksize;
                             int ClosingLine = -1;
                             for (int j = i; j >= 0 && ClosingLine == -1; j--)
                             {
-                                if (CodeLines[j][0] == 'c' && Collection[j].stacksize == StackSize && CType.Where == Collection[j].ctype)
+                                if (CodeLines[j][0] == 'c' && Collection[j].stacksize == StackSize && Current == Collection[j].ctype)
                                 {
                                     ClosingLine = Collection[j].ID;
                                 }
@@ -300,7 +315,6 @@
                             }
                             FCode.Add(new Jump(new JumpSpotProper(ClosingLine), new Pointer(1, 0, false), false));
                         }
-
                         break;
                     }
                     default:
@@ -373,11 +387,10 @@
             PointerType PointerValue = PointerType.Value;
             switch (Code[ReadSpot])
             {
-                case 'f' when Code[ReadSpot..(ReadSpot + 5)] == "false":
+                case 'f' when ReadSpot + 5 <= Code.Length && Code[ReadSpot..(ReadSpot + 5)] == "false":
                     return (new Pointer(0, PointerType.Value, false), ReadSpot + 5);
-                case 't' when Code[ReadSpot..(ReadSpot + 4)] == "true":
+                case 't' when ReadSpot + 4 <= Code.Length && Code[ReadSpot..(ReadSpot + 4)] == "true":
                     return (new Pointer(1, PointerType.Value, false), ReadSpot + 4);
-
                 case 'f' when Code[ReadSpot + 1] == 'a':
                     PointerValue = PointerType.FunctionArray;
                     ReadSpot += 2;

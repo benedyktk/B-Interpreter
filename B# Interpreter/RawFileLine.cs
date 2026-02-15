@@ -17,6 +17,10 @@ namespace DesoloCompiler
         {
             switch (OpCode)
             {
+                case -10:
+                    return PointerDest + " = fsubdone()";
+                case -9:
+                    return PointerDest + " = fsubread()";
                 case -8:
                     return "fremove(" + EntryPointers[0] + ")";
                 case -7:
@@ -33,7 +37,7 @@ namespace DesoloCompiler
                 case -5:
                     return PointerDest + " = freaddone()";
                 case -4:
-                    return PointerDest + " = freadchar()";
+                    return PointerDest + " = freadstring()";
                 case -3:
                     return PointerDest + " = freadint()";
                 case -2:
@@ -134,11 +138,18 @@ namespace DesoloCompiler
             }
         }
     }
-    public record ExceptionLine(string Problem) : IFileLine
+    public record StringLine(string Text, bool Type) : IFileLine
     {
         public override string ToString()
         {
-            return "fexcept(" + Problem + ")";
+            if (Type)
+            {
+                return "fsubmit(" + Text + ")";
+            }
+            else
+            {
+                return "fexcept(" + Text + ")";
+            }
         }
     }
 }

@@ -9,35 +9,28 @@ namespace B__Interpreter.Tests;
 /// - Source: #N is literal value N, #pN reads var[N], #aN reads var[var[N]]
 /// - Conditionals (cif/celse/cwhile) take a single pointer, not expressions
 /// - Functions: define(name) / ffuncname(args) / freturn(val)
-/// - Jumps: defineplace(name) / fjump(label)() / fjump(label,#cond)()
+/// - Jumps: defineplace(name) / fjump(label) / fjump(label,#cond)
 /// </summary>
 public class InterpreterTests : IDisposable
 {
     private readonly TextWriter _originalOut;
     private readonly TextReader _originalIn;
-
     public InterpreterTests()
     {
         _originalOut = Console.Out;
         _originalIn = Console.In;
     }
-
     public void Dispose()
     {
         Console.SetOut(_originalOut);
         Console.SetIn(_originalIn);
     }
-
     static string Run(string code, string? input = null)
     {
-        Console.SetIn(new StringReader(input ?? ""));
         var writer = new StringWriter();
-        Console.SetOut(writer);
-
         var compiled = Compiler.StringToCode(code);
-        var interpreter = new Interpreter(compiled);
+        var interpreter = new Interpreter(compiled, new StringReader(input ?? ""), writer);
         interpreter.RunCode(0);
-
         return writer.ToString();
     }
 
@@ -614,5 +607,86 @@ public class InterpreterTests : IDisposable
             fwrite(#p0");
         """;
         Assert.Equal("Hello", Run(code, "Hello"));
+    }
+    [Fact]
+    public void SubmitEcho()
+    {
+        // Reads a submission char by char and sends it
+        var code = """
+        fsubmit(You_seem_to_have_entered_a_logical_error);
+        cuntil(#p0);
+        {;
+            #p1 = fsubread();
+            fwrite(#p1);
+            #p0 = fsubdone();
+        };
+        """;
+        Assert.Equal("You seem to have entered a logical error", Run(code));
+    }
+    [Fact]
+    public void TheFinalExam()
+    {
+        //Receive a string and recursively output less and less chars. Always capitalizes first character if it's Latin.
+        var code = """
+        #p0 = #100;
+        cuntil(#p1);
+        {;
+            #a0 = freadstring();
+            #p0 = #p0 + #1;
+            #p1 = freaddone();
+        };
+        /#p0 - limit, #p1 - current start spot, #p2 - current read spot;
+        #p1 = #100;
+        #p3 = #p1 < #p0;
+        cwhile(#p3);
+        {;
+            #p2 = #p1;
+            #p4 = #p2 < #p0;
+            cwhile(#p4);
+            {;
+                #p-1 = #p2 - #1;
+                #p5 = fCondCapitalize(#a-1, #a2);
+                fwrite(#p5");
+                #p2 = #p2 + #1;
+                #p4 = #p2 < #p0;
+            };
+            fwrite(#,");
+            fwrite(#32");
+            #a1 = #0;
+            #p1 = #p1 + #1;
+            #p-2 = #a1 == #32;
+            cwhile(#p-2);
+            {;
+              #a1 = #0;
+              #p1 = #p1 + #1;
+              #p-2 = #a1 == #32;
+            };
+            #p3 = #p1 < #p0;
+        };
+        fterminate();
+        define(CondCapitalize);
+        {;
+            #p-99 = #f0 == #32;
+            #p-98 = #f0 == #0;
+            #p-99 = #p-99 | #p-98;
+            cif(#p-99);
+            {;
+                #f1 = fCapitalize(#f1);
+            };
+            freturn(#f1);
+        };
+        define(Capitalize);
+        {;
+            #p-100 = #f0 >= #97;
+            #p-101 = #f0 <= #122;
+            #p-100 = #p-100 & #p-101;
+            cif(#p-100);
+            {;
+                #f0 = #f0 - #32;
+            };
+            freturn(#f0);
+        };
+        """;
+        Assert.Equal("Hello Wo Rлd, Ello Wo Rлd, Llo Wo Rлd, Lo Wo Rлd, O Wo Rлd, Wo Rлd, O Rлd, Rлd, лd, D, ", Run(code, "Hello wo rлd"));
     }
 }

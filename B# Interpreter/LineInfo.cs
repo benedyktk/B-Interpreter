@@ -6,27 +6,25 @@ public enum CType
         Define = -1,
         If = 0,
         Else = 1,
-        Where = 2
+        While = 2,
+        Until = 3
 }
 
 public readonly record struct LineInfo(int count, int ID, CType ctype, int stacksize)
 {
     public override string ToString()
     {
-        string conditional = "";
-        switch (ctype)
+
+        string conditional = ctype switch
         {
-            case CType.None:
-                conditional = "none"; break;
-            case CType.Define:
-                conditional = "define"; break;
-            case CType.If:
-                conditional = "if"; break;
-            case CType.Else:
-                conditional = "else"; break;
-            case CType.Where:
-                conditional = "where"; break;
-        }
+            CType.None => "none",
+            CType.Define => "define",
+            CType.If => "if",
+            CType.Else => "else",
+            CType.While => "while",
+            CType.Until => "until",
+            _ => throw new Exception("Invalid CType")
+        };
         return "B#Lines " + count + ", B#ID " + ID + ", Ctype " + conditional + ", Layer " + stacksize;
     }
 }
