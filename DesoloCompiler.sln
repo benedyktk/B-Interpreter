@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36408.4
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11505.172 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B# Interpreter", "B# Interpreter\B# Interpreter.csproj", "{40294075-EF5C-4008-B661-9B05BBDA14C9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesoloCompiler", "DesoloCompiler\DesoloCompiler.csproj", "{40294075-EF5C-4008-B661-9B05BBDA14C9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "B# Interpreter.Tests", "B# Interpreter.Tests\B# Interpreter.Tests.csproj", "{F6BEB69B-17FE-489C-BA30-8E3356041EBF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesoloCompiler.Tests", "DesoloCompiler.Tests\DesoloCompiler.Tests.csproj", "{F6BEB69B-17FE-489C-BA30-8E3356041EBF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

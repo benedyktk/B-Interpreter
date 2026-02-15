@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>B__Interpreter.Tests</RootNamespace>
+    <RootNamespace>DesoloCompiler.Tests</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\B# Interpreter\B# Interpreter.csproj" />
+    <ProjectReference Include="..\DesoloCompiler\DesoloCompiler.csproj" />
   </ItemGroup>
 
 </Project>

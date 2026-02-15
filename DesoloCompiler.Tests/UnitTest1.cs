@@ -1,7 +1,4 @@
-using DesoloCompiler;
-using Xunit;
-
-namespace B__Interpreter.Tests;
+namespace DesoloCompiler.Tests;
 
 /// <summary>
 /// Tests for the B# interpreter. Key syntax notes:
@@ -11,25 +8,14 @@ namespace B__Interpreter.Tests;
 /// - Functions: define(name) / ffuncname(args) / freturn(val)
 /// - Jumps: defineplace(name) / fjump(label) / fjump(label,#cond)
 /// </summary>
-public class InterpreterTests : IDisposable
+public class InterpreterTests
 {
-    private readonly TextWriter _originalOut;
-    private readonly TextReader _originalIn;
-    public InterpreterTests()
-    {
-        _originalOut = Console.Out;
-        _originalIn = Console.In;
-    }
-    public void Dispose()
-    {
-        Console.SetOut(_originalOut);
-        Console.SetIn(_originalIn);
-    }
     static string Run(string code, string? input = null)
     {
-        var writer = new StringWriter();
+        using var writer = new StringWriter();
+        using var reader = new StringReader(input ?? "");
         var compiled = Compiler.StringToCode(code);
-        var interpreter = new Interpreter(compiled, new StringReader(input ?? ""), writer);
+        var interpreter = new Interpreter(compiled, reader, writer);
         interpreter.RunCode(0);
         return writer.ToString();
     }
@@ -617,7 +603,7 @@ public class InterpreterTests : IDisposable
         cuntil(#p0);
         {;
             #p1 = fsubread();
-            fwrite(#p1);
+            fwrite(#p1");
             #p0 = fsubdone();
         };
         """;
