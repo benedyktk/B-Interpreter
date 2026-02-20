@@ -6,7 +6,8 @@ public enum PointerType
     Pointer = 1,
     Array = 2,
     Function = 3,
-    FunctionArray = 4
+    FunctionArray = 4,
+    Constant = 5
 }
 
 public readonly record struct Pointer(int PointerV, PointerType type, bool Char)
@@ -20,9 +21,9 @@ public readonly record struct Pointer(int PointerV, PointerType type, bool Char)
             PointerType.Array => "a" + PointerV,
             PointerType.Function => "f" + PointerV,
             PointerType.FunctionArray => "fa" + PointerV,
+            PointerType.Constant => "c" + PointerV,
             _ => throw new Exception("Invalid pointer type.")
         };
-
         return Char ? ToModify + "\"" : ToModify;
     }
 }
