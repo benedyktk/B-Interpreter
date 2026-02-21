@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DesoloCompiler": {
+      "commandName": "Project",
+      "commandLineArgs": "program.dsl"
+    }
+  }
+}
