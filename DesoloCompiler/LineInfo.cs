@@ -9,7 +9,13 @@ public enum CType
         While = 2,
         Until = 3
 }
-
+public readonly record struct FuncInfo(string FuncName, int PointerMax)
+{
+    public override string ToString()
+    {
+        return "FuncName: " + FuncName + " CurMaxPointer: " + PointerMax;
+    }
+}
 public readonly record struct LineInfo(int count, int ID, CType ctype, int stacksize)
 {
     public override string ToString()

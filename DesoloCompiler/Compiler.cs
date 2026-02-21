@@ -33,10 +33,9 @@ public static class Compiler
         for (int I = 0; I < CodeLines.Count; I++)
         {
             string Operative = CodeLines[I];
-
             switch (Operative[0])
             {
-                case 'd' when Operative[6] != 'p':
+                case 'd' when Operative[6] != 'p' && Operative[6] != 'c':
                     ToUse.Push(CType.Define);
                     break;
                 case 'c' when Operative[1] == 'i':
@@ -52,11 +51,11 @@ public static class Compiler
                     ToUse.Push(CType.Until);
                     break;
             }
-
             Collection[I] = Operative[0] switch
             {
-                'f' or '#' => new LineInfo(1, TotalId, CType.None, ToUse.Size),
-                'd' when Operative[6] == 'p' => new LineInfo(0, TotalId, CType.None, ToUse.Size),
+                'f' => new LineInfo(1, TotalId, CType.None, ToUse.Size),
+                '#' => new LineInfo(1, TotalId, CType.None, ToUse.Size),
+                'd' when Operative[6] == 'p' || Operative[6] == 'c' => new LineInfo(0, TotalId, CType.None, ToUse.Size),
                 'd' => new LineInfo(0, TotalId, CType.Define, ToUse.Size),
                 'c' when Operative[1] == 'i' => new LineInfo(1, TotalId, CType.If, ToUse.Size),
                 'c' when Operative[1] == 'e' => new LineInfo(1, TotalId, CType.Else, ToUse.Size),
@@ -83,7 +82,9 @@ public static class Compiler
         List<IFileLine> FCode = new List<IFileLine>();
         Dictionary<string, int> FuncToInt = new Dictionary<string, int>();
         Dictionary<string, int> PlaceToInt = new Dictionary<string, int>();
-        Dictionary<int, int> ConstValToInt = new Dictionary<int, int>();
+        Dictionary<int, Pointer> ConstValToPointer = new Dictionary<int, Pointer>();
+        Dictionary<string, int> RequiredAms = new Dictionary<string, int>();
+        Stack<FuncInfo> Function = new Stack<FuncInfo>();
         for (int I = 0; I < CodeLines.Count; I++)
         {
             string Operative = CodeLines[I];
@@ -94,7 +95,7 @@ public static class Compiler
                 {
                     ReadSpot++;
                     var Str = ReadUntil(Operative, ref ReadSpot, '(');
-                    List<Pointer> Info = new List<Pointer>();
+                    List<Pointer> LInfo = new List<Pointer>();
                     string Jic = "";
                     if (Str == "except" || Str == "jump" || Str == "submit")
                     {
@@ -107,37 +108,41 @@ public static class Compiler
                     while (PointerStart(Operative[ReadSpot]))
                     {
                         var Pnt = ReadPointer(Operative, ref ReadSpot);
-                        Info.Add(Pnt);
+                        FuncLimitCheck(Function, Pnt);
+                        LInfo.Add(Pnt);
                         if (Operative[ReadSpot] != ')')
                         {
                             ReadUntil(Operative, ref ReadSpot, ',');
                         }
                     }
+                    Pointer[] Info = LInfo.ToArray();
                     ReadUntil(Operative, ref ReadSpot, ')');
                     IFileLine FileLine = Str switch
                     {
-                        "submit" when Info.Count == 0 => new StringLine(Jic.Replace('_', ' '), true),
+                        "submit" when Info.Length == 0 => new StringLine(Jic.Replace('_', ' '), true),
                         "submit" => throw new Exception("Invalid amount of parameters in Return function at line " + Operative),
-                        "return" when Info.Count == 0 => new Return(null),
-                        "return" when Info.Count == 1 => new Return(Info[0]),
+                        "return" when Info.Length == 0 => new Return(null),
+                        "return" when Info.Length == 1 => new Return(Info[0]),
                         "return" => throw new Exception("Invalid amount of parameters in Return function at line " + Operative),
-                        "write" when Info.Count > 1 => throw new Exception("Invalid amount of parameters in Write function at line " + Operative),
-                        "write" => new Operation(Info, new Pointer(0, 0, false), OperationCode.Write),
-                        "jump" when Info.Count == 0 => new Jump(new JumpString(Jic), new Pointer(1, 0, false), false),
-                        "jump" when Info.Count == 1 => new Jump(new JumpString(Jic), Info[0], false),
+                        "write" when Info.Length != 1 => throw new Exception("Invalid amount of parameters in Write function at line " + Operative),
+                        "write" => new Operation(Info, new Pointer(0, 0, false), OperationCode.WriteS),
+                        "newline" when Info.Length != 0 => throw new Exception("Invalid amount of parameters in Newline function at line " + Operative),
+                        "newline" => new Operation(Info, new Pointer(0, 0, false), OperationCode.NewLine),
+                        "jump" when Info.Length == 0 => new Jump(new JumpString(Jic), new Pointer(1, 0, false), false),
+                        "jump" when Info.Length == 1 => new Jump(new JumpString(Jic), Info[0], false),
                         "jump" => throw new Exception("Invalid amount of parameters in Jump function at line " + Operative),
-                        "except" when Info.Count == 0 => new StringLine($@"""{Jic.Replace('_', ' ')}"" at line {I}", false),
+                        "except" when Info.Length == 0 => new StringLine(Jic.Replace('_', ' '), false),
                         "except" => throw new Exception("Invalid amount of parameters in Except function at line " + Operative),
-                        "terminate" when Info.Count != 0 => throw new Exception("Invalid amount of parameters in Terminate function at line " + Operative),
+                        "terminate" when Info.Length != 0 => throw new Exception("Invalid amount of parameters in Terminate function at line " + Operative),
                         "terminate" => new Jump(new JumpSpotProper(-1), new Pointer(1, 0, false), false),
-                        "exceptadd" when Info.Count != 1 => throw new Exception("Invalid amount of parameters in ExceptAdd function at line " + Operative),
-                        "exceptadd" => new Operation(Info, new Pointer(0, 0, false), OperationCode.ExceptHandle),
-                        "exceptsend" when Info.Count != 0 => throw new Exception("Invalid amount of parameters in ExceptSend function at line " + Operative),
-                        "exceptsend" => new Operation(Info, new Pointer(0, 0, false), OperationCode.ExceptHandle),
-                        "remove" when Info.Count != 1 => throw new Exception("Invalid amount of parameters in Remove function at line " + Operative),
+                        "exceptadd" when Info.Length != 1 => throw new Exception("Invalid amount of parameters in ExceptAdd function at line " + Operative),
+                        "exceptadd" => new Operation(Info, new Pointer(0, 0, false), OperationCode.ExceptAdd),
+                        "exceptsend" when Info.Length != 0 => throw new Exception("Invalid amount of parameters in ExceptSend function at line " + Operative),
+                        "exceptsend" => new Operation(Info, new Pointer(0, 0, false), OperationCode.ExceptSend),
+                        "remove" when Info.Length != 1 => throw new Exception("Invalid amount of parameters in Remove function at line " + Operative),
                         "remove" => new Operation(Info, new Pointer(0, 0, false), OperationCode.Remove),
                         "readint" or "readstring" or "readdone" or "subread" or "subdone" or "hasval" => throw new Exception("No return line of system function at line " + Operative),
-                        _ => new FunctionCall(Info, null, new JumpString(Str))
+                        _ => new FunctionCall(Info, 0, null, new JumpString(Str))
                     };
                     FCode.Add(FileLine);
                     break;
@@ -146,6 +151,7 @@ public static class Compiler
                 {
                     ReadSpot = 0;
                     var Destination = ReadPointer(Operative, ref ReadSpot);
+                    FuncLimitCheck(Function, Destination);
                     if (Operative[ReadSpot] != '=')
                     {
                         throw new Exception("Invalid post-pointer symbol at line " + Operative);
@@ -153,32 +159,29 @@ public static class Compiler
                     ReadSpot++;
                     if (Operative[ReadSpot] == 'f')
                     {
-                        if (Destination.type == PointerType.Constant)
-                        {
-                             throw new Exception("Invalid assignment operation to constant pointer at line " + Operative);
-                        }
                         ReadSpot++;
                         var Str = ReadUntil(Operative, ref ReadSpot, '(');
                         switch (Str)
                         {
                             case "readint":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, OperationCode.ReadInt));
+                                FCode.Add(new Operation(new Pointer[0], Destination, OperationCode.ReadInt));
                                 break;
                             case "readstring":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, OperationCode.ReadString));
+                                FCode.Add(new Operation(new Pointer[0], Destination, OperationCode.ReadString));
                                 break;
                             case "subread":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, OperationCode.SubRead));
+                                FCode.Add(new Operation(new Pointer[0], Destination, OperationCode.SubRead));
                                 break;
                             case "subdone":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, OperationCode.SubDone));
+                                FCode.Add(new Operation(new Pointer[0], Destination, OperationCode.SubDone));
                                 break;
                             case "readdone":
-                                FCode.Add(new Operation(new List<Pointer>(), Destination, OperationCode.ReadDone));
+                                FCode.Add(new Operation(new Pointer[0], Destination, OperationCode.ReadDone));
                                 break;
                             case "submit":
                             case "return":
                             case "write":
+                            case "newline":
                             case "jump":
                             case "except":
                             case "exceptadd":
@@ -188,8 +191,9 @@ public static class Compiler
                             default:
                                 List<Pointer> Info = new List<Pointer>();
                                 while (PointerStart(Operative[ReadSpot]))
-                                {
+                                    {
                                     var Pnt = ReadPointer(Operative, ref ReadSpot);
+                                    FuncLimitCheck(Function, Pnt);
                                     Info.Add(Pnt);
                                     if (Operative[ReadSpot] != ')')
                                     {
@@ -199,11 +203,11 @@ public static class Compiler
                                 ReadUntil(Operative, ref ReadSpot, ')');
                                 if (Str == "hasval")
                                 {
-                                    FCode.Add(new Operation(Info, Destination, OperationCode.HasVal));
+                                    FCode.Add(new Operation(Info.ToArray(), Destination, OperationCode.HasVal));
                                 }
                                 else
                                 {
-                                    FCode.Add(new FunctionCall(Info, Destination, new JumpString(Str)));
+                                    FCode.Add(new FunctionCall(Info.ToArray(), 0, Destination, new JumpString(Str)));
                                 }
                                 break;
                         }
@@ -213,36 +217,20 @@ public static class Compiler
                         var UOp = ReadUntil(Operative, ref ReadSpot, '#');
                         ReadSpot--;
                         var Pnt = ReadPointer(Operative, ref ReadSpot);
+                        FuncLimitCheck(Function, Pnt);
                         List<Pointer> Arguments = [Pnt];
                         if (ReadSpot == Operative.Length)
                         {
-                            if (Destination.type == PointerType.Constant)
-                            {
-                                if (UOp != "" || Arguments[0].type != PointerType.Value)
-                                {
-                                    throw new Exception("Invalid assignment operation to constant pointer at line " + Operative);
-                                }
-                                else
-                                {
-                                    ConstValToInt.Add(Destination.PointerV, Arguments[0].PointerV);
-                                }
-                            }
-                            else
-                            {
-                                FCode.Add(new Operation(Arguments, Destination, IdentifyUOp(UOp)));
-                            }
+                            FCode.Add(new Operation(Arguments.ToArray(), Destination, IdentifyUOp(UOp)));
                         }
                         else
                         {
-                            if (Destination.type == PointerType.Constant)
-                            {
-                                throw new Exception("Invalid assignment operation to constant pointer at line " + Operative);
-                            }
                             var BOp = ReadUntil(Operative, ref ReadSpot, '#');
                             ReadSpot--;
                             var Pointer = ReadPointer(Operative, ref ReadSpot);
+                            FuncLimitCheck(Function, Pointer);
                             Arguments.Add(Pointer);
-                            FCode.Add(new Operation(Arguments, Destination, IdentifyBOp(BOp)));
+                            FCode.Add(new Operation(Arguments.ToArray(), Destination, IdentifyBOp(BOp)));
                         }
                     }
                     break;
@@ -250,19 +238,40 @@ public static class Compiler
                 case 'd':
                 {
                     var TillP = ReadUntil(Operative, ref ReadSpot, '(');
-                    var TillEp = ReadUntil(Operative, ref ReadSpot, ')');
-                    switch (TillP)
+                    if (TillP == "defineconst")
                     {
-                        case "define":
-                            FuncToInt.Add(TillEp, FCode.Count + 1);
-                            break;
-                        case "defineplace":
-                            PlaceToInt.Add(TillEp, FCode.Count);
-                            break;
-                        default:
-                            throw new Exception("Invalid define line at line " + Operative);
+                        var PointerA = ReadPointer(Operative, ref ReadSpot);
+                        ReadSpot--;
+                        ReadUntil(Operative, ref ReadSpot, ',');
+                        var PointerB = ReadPointer(Operative, ref ReadSpot);
+                        ReadSpot--;
+                        ReadUntil(Operative, ref ReadSpot, ')');
+                        if (PointerA.type != PointerType.Constant)
+                        {
+                            throw new Exception("Invalid non-constant definition at line " + Operative);
+                        }
+                        if (PointerB.type == PointerType.Function || PointerB.type == PointerType.FunctionArray)
+                        {
+                            throw new Exception("Attempted defintion of pointer as function-type pointer at line " + Operative);
+                        }
+                        ConstValToPointer.Add(PointerA.PointerV, PointerB);
                     }
-
+                    else
+                    {
+                        var TillEp = ReadUntil(Operative, ref ReadSpot, ')');
+                        switch (TillP)
+                        {
+                            case "define":
+                                FuncToInt.Add(TillEp, FCode.Count + 1);
+                                Function.Push(new FuncInfo(TillEp, 0));
+                                break;
+                            case "defineplace":
+                                PlaceToInt.Add(TillEp, FCode.Count);
+                                break;
+                            default:
+                                throw new Exception("Invalid define line at line " + Operative);
+                        }
+                    }
                     break;
                 }
                 case 'c':
@@ -291,6 +300,7 @@ public static class Compiler
                         throw new Exception("No ending parentheses of conditional at line " + Operative);
                     }
                     var Pnt = ReadPointer(Operative, ref ReadSpot);
+                    FuncLimitCheck(Function, Pnt);
                     ReadUntil(Operative, ref ReadSpot, ')');
                     FCode.Add(new Jump(new JumpSpotProper(ClosingLine + Interpreter.BoolToInt(CType is CType.While or CType.Until)), Pnt, CType != CType.Else && CType != CType.Until));
                     break;
@@ -309,6 +319,7 @@ public static class Compiler
                     if (Collection[I].ctype == CType.Define)
                     {
                         FCode.Add(new Return(null));
+                        RequiredAms.Add(Function.ReadTop().FuncName, Function.ReadTop().PointerMax);
                     }
                     if (Collection[I].ctype == CType.While || Collection[I].ctype == CType.Until)
                     {
@@ -334,20 +345,30 @@ public static class Compiler
                     throw new Exception("Invalid line start at line " + Operative);
             }
         }
-        PatchFunctionsAndJumps(FCode, FuncToInt, PlaceToInt, ConstValToInt);
+        PatchFunctionsAndJumps(FCode, FuncToInt, PlaceToInt, ConstValToPointer, RequiredAms);
         return FCode;
     }
-
-    private static void PatchFunctionsAndJumps(List<IFileLine> FCode, Dictionary<string, int> FuncToInt, Dictionary<string, int> PlaceToInt, Dictionary<int, int> ConstValToInt)
+    public static void FuncLimitCheck(Stack<FuncInfo> ToTry, Pointer Importance)
+    {
+        if ((Importance.type == PointerType.Function || Importance.type == PointerType.FunctionArray) && Importance.PointerV + 1 > ToTry.ReadTop().PointerMax)
+        {
+            ToTry.Main[ToTry.Main.Count - 1] = new FuncInfo(ToTry.ReadTop().FuncName, Importance.PointerV + 1);
+        }
+    }
+    private static void PatchFunctionsAndJumps(List<IFileLine> FCode, Dictionary<string, int> FuncToInt, Dictionary<string, int> PlaceToInt, Dictionary<int, Pointer> ConstValToPointer, Dictionary<string, int> RequiredAms)
     {
         for (int I = 0; I < FCode.Count; I++)
         {
             switch (FCode[I])
             {
                 case FunctionCall Fc:
-                    for (int i = 0; i < Fc.EntryPointers.Count; i++)
+                    for (int i = 0; i < Fc.EntryPointers.Length; i++)
                     {
-                        Fc.EntryPointers[i] = ConstCheck(Fc.EntryPointers[i], ConstValToInt);
+                        Fc.EntryPointers[i] = ConstCheck(Fc.EntryPointers[i], ConstValToPointer);
+                    }
+                    if(Fc.ExitPointer != null)
+                    {
+                        Fc = Fc with { ExitPointer = ConstCheck(Fc.ExitPointer.Value, ConstValToPointer) };
                     }
                     string Needed = "";
                     switch (Fc.RunLine)
@@ -366,10 +387,18 @@ public static class Compiler
                     {
                         throw new Exception("Called function named " + Needed + " has not been defined.");
                     }
+                    if (RequiredAms.TryGetValue(Needed, out Val))
+                    {
+                        Fc = Fc with { RequiredAmount = Val };
+                    }
+                    else
+                    {
+                        throw new Exception("Called function named " + Needed + " has not been closed properly.");
+                    }
                     FCode[I] = Fc;
                     break;
                 case Jump Jmp:
-                    Jmp = Jmp with { ConditionPointer = ConstCheck(Jmp.ConditionPointer, ConstValToInt) };
+                    Jmp = Jmp with { ConditionPointer = ConstCheck(Jmp.ConditionPointer, ConstValToPointer) };
                     string? ToGet = null;
                     switch (Jmp.Spot)
                     {
@@ -391,28 +420,29 @@ public static class Compiler
                     FCode[I] = Jmp;
                     break;
                 case Operation Op:
-                    for (int i = 0; i < Op.EntryPointers.Count; i++)
+                    for (int i = 0; i < Op.EntryPointers.Length; i++)
                     {
-                        Op.EntryPointers[i] = ConstCheck(Op.EntryPointers[i], ConstValToInt);
+                        Op.EntryPointers[i] = ConstCheck(Op.EntryPointers[i], ConstValToPointer);
                     }
+                    Op = Op with { PointerDest = ConstCheck(Op.PointerDest, ConstValToPointer) };
                     FCode[I] = Op;
                     break;
                 case Return Rt:
                     if (Rt.ReturnVal != null)
                     {
-                        FCode[I] = Rt with { ReturnVal = ConstCheck(Rt.ReturnVal.Value, ConstValToInt) };
+                        FCode[I] = Rt with { ReturnVal = ConstCheck(Rt.ReturnVal.Value, ConstValToPointer) };
                     }
                     break;
             }
         }
     }
-    private static Pointer ConstCheck(Pointer ToCheck, Dictionary<int, int> ConstValToInt)
+    private static Pointer ConstCheck(Pointer ToCheck, Dictionary<int, Pointer> ConstValToPointer)
     {
         if (ToCheck.type == PointerType.Constant)
         {
-            if (ConstValToInt.TryGetValue(ToCheck.PointerV, out var Val))
+            if (ConstValToPointer.TryGetValue(ToCheck.PointerV, out var Val))
             {
-                ToCheck = new Pointer(Val, PointerType.Value, ToCheck.Char);
+                return Val;
             }
             else
             {
@@ -541,6 +571,8 @@ public static class Compiler
             "&" => OperationCode.And,
             "|" => OperationCode.Or,
             "^" => OperationCode.Xor,
+            "<<" => OperationCode.LeftShift,
+            ">>" => OperationCode.RightShift,
             "==" => OperationCode.Equal,
             "!=" => OperationCode.NotEqual,
             ">" => OperationCode.Greater,

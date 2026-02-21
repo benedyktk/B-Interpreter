@@ -1,13 +1,6 @@
-namespace DesoloCompiler.Tests;
+using Microsoft.VisualBasic;
 
-/// <summary>
-/// Tests for the B# interpreter. Key syntax notes:
-/// - Destination: #pN sets var[N] directly, #aN sets var[var[N]] (indirect)
-/// - Source: #N is literal value N, #pN reads var[N], #aN reads var[var[N]]
-/// - Conditionals (cif/celse/cwhile) take a single pointer, not expressions
-/// - Functions: define(name) / ffuncname(args) / freturn(val)
-/// - Jumps: defineplace(name) / fjump(label) / fjump(label,#cond)
-/// </summary>
+namespace DesoloCompiler.Tests;
 public class InterpreterTests
 {
     static string Run(string code, string? input = null)
@@ -339,7 +332,7 @@ public class InterpreterTests
     [Fact]
     public void WriteNewline()
     {
-        var code = "fwrite();";
+        var code = "fnewline();";
         Assert.Equal(Environment.NewLine, Run(code));
     }
 
@@ -488,7 +481,6 @@ public class InterpreterTests
         var ex = Assert.Throws<Exception>(() => Run(code));
         Assert.Contains("Hi", ex.Message);
     }
-
     // ===================== Literals =====================
 
     [Fact]
@@ -513,30 +505,76 @@ public class InterpreterTests
         var code = "fwrite(#72\"); fwrite(#105\");";
         Assert.Equal("Hi", Run(code));
     }
-
+    // ===================== Constants ==================
+    [Fact]
+    public void ConstantInitialize()
+    {
+        var code = """
+            defineconst(#c0, #H");
+            defineconst(#c1, #i");
+            fwrite(#c0);
+            fwrite(#c1);
+            """;
+        Assert.Equal("Hi", Run(code));
+    }
+    [Fact]
+    public void ConstantPointerInitialize()
+    {
+        var code = """
+            fsubmit(This_is_actually_pretty_useful);
+            defineconst(#c0, #p48"); defineconst(#c1, #p95);
+            cuntil(#c1);
+            {;
+                #c0 = fsubread();
+                fwrite(#c0);
+                #c1 = fsubdone();
+            };
+            """;
+        Assert.Equal("This is actually pretty useful", Run(code));
+    }
     // ===================== Compiler Errors =====================
+    [Fact]
+    public void NoConstantError()
+    {
+        var code = """
+            defineconst(#c0, #7);
+            fwrite(#c1);
+            """;
+        var ex = Assert.Throws<Exception>(() => Run(code));
+        Assert.Equal("Constant pointer index 1 has not been defined.", ex.Message);
+    }
 
     [Fact]
     public void UndefinedFunctionThrows()
     {
         var code = "fnonexistent();";
-        Assert.Throws<Exception>(() => Compiler.StringToCode(code));
+        var ex = Assert.Throws<Exception>(() => Run(code));
+        Assert.Equal("Called function named nonexistent has not been defined.", ex.Message);
     }
 
     [Fact]
     public void UndefinedPlaceThrows()
     {
-        var code = "fjump(nowhere)();";
-        Assert.Throws<Exception>(() => Compiler.StringToCode(code));
+        var code = "fjump(nowhere);";
+        var ex = Assert.Throws<Exception>(() => Run(code));
+        Assert.Equal("Jumped-to place named nowhere has not been defined.", ex.Message);
     }
 
     [Fact]
     public void UnmatchedBraceThrows()
     {
         var code = "cif(#1); {; fwrite(#1);";
-        Assert.Throws<Exception>(() => Compiler.StringToCode(code));
+        var ex = Assert.Throws<Exception>(() => Run(code));
+        Assert.Equal("No ending parentheses of conditional at line cif(#1)", ex.Message);
     }
 
+    [Fact]
+    public void WrongParameterAmount()
+    {
+        var code = "fwrite(#H\", #i\");";
+        var ex = Assert.Throws<Exception>(() => Run(code));
+        Assert.Equal("Invalid amount of parameters in Write function at line fwrite(#H\",#i\")", ex.Message);
+    }
     // ===================== Comments =====================
 
     [Fact]
@@ -610,11 +648,31 @@ public class InterpreterTests
         Assert.Equal("You seem to have entered a logical error", Run(code));
     }
     [Fact]
+    public void AutomaticFunctionParams()
+    {
+        var code = """ 
+        fsubmit(Hello_World);
+        fMain();
+        fterminate();
+        define(Main);
+        {;
+            cuntil(#f1);
+            {;
+                #f0 = fsubread();
+                fwrite(#f0");
+                #f1 = fsubdone();
+            };
+        };
+        """;
+        Assert.Equal("Hello World", Run(code));
+    }
+    [Fact]
     public void TheFinalExam()
     {
         //Receive a string and recursively output less and less chars. Always capitalizes first character if it's Latin.
         var code = """
-        #p0 = #100;
+        defineconst(#c0, #100);
+        #p0 = #c0;
         cuntil(#p1);
         {;
             #a0 = freadstring();
@@ -622,7 +680,7 @@ public class InterpreterTests
             #p1 = freaddone();
         };
         /#p0 - limit, #p1 - current start spot, #p2 - current read spot;
-        #p1 = #100;
+        #p1 = #c0;
         #p3 = #p1 < #p0;
         cwhile(#p3);
         {;
@@ -636,8 +694,7 @@ public class InterpreterTests
                 #p2 = #p2 + #1;
                 #p4 = #p2 < #p0;
             };
-            fwrite(#,");
-            fwrite(#32");
+            fnewline();
             #a1 = #0;
             #p1 = #p1 + #1;
             #p-2 = #a1 == #32;
@@ -652,10 +709,10 @@ public class InterpreterTests
         fterminate();
         define(CondCapitalize);
         {;
-            #p-99 = #f0 == #32;
-            #p-98 = #f0 == #0;
-            #p-99 = #p-99 | #p-98;
-            cif(#p-99);
+            #f2 = #f0 == #32;
+            #f3 = #f0 == #0;
+            #f2 = #f2 | #f3;
+            cif(#f2);
             {;
                 #f1 = fCapitalize(#f1);
             };
@@ -663,16 +720,16 @@ public class InterpreterTests
         };
         define(Capitalize);
         {;
-            #p-100 = #f0 >= #97;
-            #p-101 = #f0 <= #122;
-            #p-100 = #p-100 & #p-101;
-            cif(#p-100);
+            #f1 = #f0 >= #97;
+            #f2 = #f0 <= #122;
+            #f1 = #f1 & #f2;
+            cif(#f1);
             {;
                 #f0 = #f0 - #32;
             };
             freturn(#f0);
         };
         """;
-        Assert.Equal("Hello Wo Rлd, Ello Wo Rлd, Llo Wo Rлd, Lo Wo Rлd, O Wo Rлd, Wo Rлd, O Rлd, Rлd, лd, D, ", Run(code, "Hello wo rлd"));
+        Assert.Equal("Hello Wo Rлd\r\nEllo Wo Rлd\r\nLlo Wo Rлd\r\nLo Wo Rлd\r\nO Wo Rлd\r\nWo Rлd\r\nO Rлd\r\nRлd\r\nлd\r\nD\r\n", Run(code, "Hello wo rлd"));
     }
 }

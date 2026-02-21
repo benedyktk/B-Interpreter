@@ -2,19 +2,25 @@
 
 public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWriter ConsoleOut)
 {
+    private readonly Dictionary<int, int> QuickVars = new Dictionary<int,int>();
     private readonly Tree Vars = new();
     private readonly Stack<StackPart> CallStack = new();
+    private StackPart Cached;
     private string ExceptionProgress = "";
     private string ReadingProgress = "";
     private string SubmissionProgress = "";
-
     private int PReturn(int Place)
     {
+        return QuickVars.GetValueOrDefault(Place, 0);
         return Vars.Return(Place).GetValueOrDefault();
     }
-
+    private void UpdateCache()
+    {
+        Cached = CallStack.ReadTop();
+    }
     private bool PHasValue(int Place)
     {
+        return QuickVars.TryGetValue(Place, out int val);
         return Vars.Return(Place) != null;
     }
 
@@ -25,8 +31,8 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
             PointerType.Value => ToRead.PointerV,
             PointerType.Pointer => PReturn(ToRead.PointerV),
             PointerType.Array => PReturn(PReturn(ToRead.PointerV)),
-            PointerType.Function => CallStack.ReadTop().PassedOn[ToRead.PointerV],
-            PointerType.FunctionArray => PReturn(CallStack.ReadTop().PassedOn[ToRead.PointerV]),
+            PointerType.Function => Cached.PassedOn[ToRead.PointerV].GetValueOrDefault(),
+            PointerType.FunctionArray => PReturn(Cached.PassedOn[ToRead.PointerV].GetValueOrDefault()),
             _ => throw new Exception("Invalid pointer type")
         };
     }
@@ -38,27 +44,34 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
             PointerType.Value => true,
             PointerType.Pointer => PHasValue(ToRead.PointerV),
             PointerType.Array => PHasValue(PReturn(ToRead.PointerV)),
-            PointerType.Function => ToRead.PointerV >= 0 && ToRead.PointerV < CallStack.ReadTop().PassedOn.Count,
-            PointerType.FunctionArray => PHasValue(CallStack.ReadTop().PassedOn[ToRead.PointerV]),
+            PointerType.Function => ToRead.PointerV >= 0 && ToRead.PointerV < Cached.PassedOn.Length && Cached.PassedOn[ToRead.PointerV] != null,
+            PointerType.FunctionArray => PHasValue(Cached.PassedOn[ToRead.PointerV].GetValueOrDefault()),
             _ => throw new Exception("Invalid pointer type")
         };
     }
-
+    private void PRemove(int Place)
+    {
+        QuickVars.Remove(Place);
+        return;
+        Vars.Remove(Place);
+    }
     private void Remove(Pointer ToRemove)
     {
         switch (ToRemove.type)
         {
             case PointerType.Pointer:
-                Vars.Remove(ToRemove.PointerV);
+                PRemove(ToRemove.PointerV);
                 break;
             case PointerType.Array:
-                Vars.Remove(PReturn(ToRemove.PointerV));
+                PRemove(PReturn(ToRemove.PointerV));
+                break;
+            case PointerType.Function:
+                Cached.PassedOn[ToRemove.PointerV] = null;
                 break;
             case PointerType.FunctionArray:
-                Vars.Remove(CallStack.ReadTop().PassedOn[ToRemove.PointerV]);
+                PRemove(Cached.PassedOn[ToRemove.PointerV].GetValueOrDefault());
                 break;
             case PointerType.Value:
-            case PointerType.Function:
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
@@ -76,10 +89,10 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
                 Set(PReturn(ToSet.PointerV), Value);
                 break;
             case PointerType.Function:
-                CallStack.ReadTop().PassedOn[ToSet.PointerV] = Value;
+                Cached.PassedOn[ToSet.PointerV] = Value;
                 break;
             case PointerType.FunctionArray:
-                Set(CallStack.ReadTop().PassedOn[ToSet.PointerV], Value);
+                Set(Cached.PassedOn[ToSet.PointerV].GetValueOrDefault(), Value);
                 break;
             case PointerType.Value:
                 break;
@@ -105,6 +118,8 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
 
     private void Set(int ToSet, int Value)
     {
+        QuickVars[ToSet] = Value;
+        return;
         Vars.Set(ToSet, Value);
     }
 
@@ -135,7 +150,8 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
                     }
                     break;
                 case FunctionCall Fc:
-                    CallStack.Push(new StackPart(PointerToInt(Fc.EntryPointers), Pointer));
+                    CallStack.Push(new StackPart(PointerToInt2(Fc.EntryPointers, Fc.RequiredAmount), Pointer));
+                    UpdateCache();
                     Pointer = JsToInt(Fc.RunLine) - 1;
                     break;
                 case Return Rt:
@@ -145,6 +161,7 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
                         ReadReturnValue = Read(Rt.ReturnVal.Value);
                     }
                     Pointer = CallStack.Pop().ReturnLine;
+                    UpdateCache();
                     if (Rt.ReturnVal != null)
                     {
                         FunctionCall Fc = (FunctionCall)TheCode[Pointer];
@@ -169,33 +186,35 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
         }
     }
 
-    private List<int> PointerToInt(List<Pointer> ToConvert)
+    private int[] PointerToInt(Pointer[] ToConvert)
     {
-        List<int> Returner = new List<int>();
-        foreach (var P in ToConvert)
+        int[] Returner = new int[ToConvert.Length];
+        for (int i = 0; i < ToConvert.Length; i++)
         {
-            Returner.Add(Read(P));
+            Returner[i] = Read(ToConvert[i]);
         }
         return Returner;
     }
-
+    private int?[] PointerToInt2(Pointer[] ToConvert, int TotalLength)
+    {
+        int?[] Returner = new int?[TotalLength];
+        for (int i = 0; i < ToConvert.Length; i++)
+        {
+            Returner[i] = Read(ToConvert[i]);
+        }
+        return Returner;
+    }
     private void RunOperation(Operation ToRun, Random TheDice)
     {
         Pointer Plc = ToRun.PointerDest;
-        List<int> Vals = PointerToInt(ToRun.EntryPointers);
+        int[] Vals = PointerToInt(ToRun.EntryPointers);
         switch (ToRun.OpCode)
         {
             case OperationCode.Assign:
-                CheckLength(1, ToRun);
                 Set(Plc, Vals[0]);
                 break;
-            case OperationCode.Write:
-                CheckLength(0, 1, ToRun);
-                if (Vals.Count == 0)
-                {
-                    ConsoleOut.WriteLine();
-                }
-                else if (ToRun.EntryPointers[0].Char)
+            case OperationCode.WriteS:
+                if (ToRun.EntryPointers[0].Char)
                 {
                     ConsoleOut.Write((char)Vals[0]);
                 }
@@ -204,26 +223,21 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
                     ConsoleOut.Write(Vals[0]);
                 }
                 break;
+            case OperationCode.NewLine:
+                ConsoleOut.WriteLine();
+                break;
             case OperationCode.ReadInt:
-                CheckLength(0, ToRun);
                 Set(Plc, int.Parse(ReadConsole()));
                 break;
             case OperationCode.ReadString:
-                CheckLength(0, ToRun);
                 if (ReadingProgress == "") { ReadingProgress = ReadConsole(); }
                 Set(Plc, ReadingProgress[0]); ReadingProgress = ReadingProgress.Substring(1);
                 break;
             case OperationCode.ReadDone:
-                CheckLength(0, ToRun);
                 Set(Plc, BoolToInt(ReadingProgress == ""));
                 break;
-            case OperationCode.ExceptHandle:
-                CheckLength(0, 1, ToRun);
-                if (Vals.Count == 0)
-                {
-                    throw new Exception("Thrown exception: \"" + ExceptionProgress + "\"");
-                }
-                else if (ToRun.EntryPointers[0].Char)
+            case OperationCode.ExceptAdd:
+                if (ToRun.EntryPointers[0].Char)
                 {
                     ExceptionProgress += (char)Vals[0];
                 }
@@ -232,94 +246,79 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
                     ExceptionProgress += Vals[0];
                 }
                 break;
+            case OperationCode.ExceptSend:
+                throw new Exception(ExceptionProgress);
             case OperationCode.HasVal:
-                CheckLength(1, ToRun);
                 Set(Plc, HasValue(ToRun.EntryPointers[0]));
                 break;
             case OperationCode.Remove:
-                CheckLength(1, ToRun);
                 Remove(ToRun.EntryPointers[0]);
                 break;
             case OperationCode.SubRead:
-                CheckLength(0, ToRun);
-                if(SubmissionProgress.Length == 0) { throw new Exception("Read from null length submission."); }
                 Set(Plc, SubmissionProgress[0]);
                 SubmissionProgress = SubmissionProgress[1..];
                 break;
             case OperationCode.SubDone:
-                CheckLength(0, ToRun);
                 Set(Plc, BoolToInt(SubmissionProgress == ""));
                 break;
             case OperationCode.Plus:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] + Vals[1]);
                 break;
             case OperationCode.Minus:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] - Vals[1]);
                 break;
             case OperationCode.Multiply:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] * Vals[1]);
                 break;
             case OperationCode.Divide:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] / Vals[1]);
                 break;
             case OperationCode.Modulo:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] % Vals[1]);
                 break;
             case OperationCode.UnaryMinus:
-                CheckLength(1, ToRun);
                 Set(Plc, -Vals[0]);
                 break;
             case OperationCode.And:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] & Vals[1]);
                 break;
             case OperationCode.Or:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] | Vals[1]);
                 break;
             case OperationCode.Xor:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] ^ Vals[1]);
                 break;
             case OperationCode.BitwiseNot:
-                CheckLength(1, ToRun);
-                Set(Plc, -Vals[0] - 1);
+                Set(Plc, Vals[0] ^ -1);
                 break;
             case OperationCode.LogicalNot:
-                CheckLength(1, ToRun);
                 Set(Plc, 1 - Vals[0]);
                 break;
             case OperationCode.Random:
-                CheckLength(1, ToRun);
                 Set(Plc, TheDice.Next(Vals[0]));
                 break;
+            case OperationCode.LeftShift:
+                Set(Plc, Vals[0] << Vals[1]);
+                break;
+            case OperationCode.RightShift:
+                Set(Plc, Vals[0] >> Vals[1]);
+                break;
             case OperationCode.Equal:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] == Vals[1]);
                 break;
             case OperationCode.NotEqual:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] != Vals[1]);
                 break;
             case OperationCode.Greater:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] > Vals[1]);
                 break;
             case OperationCode.GreaterOrEqual:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] >= Vals[1]);
                 break;
             case OperationCode.Lesser:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] < Vals[1]);
                 break;
             case OperationCode.LesserOrEqual:
-                CheckLength(2, ToRun);
                 Set(Plc, Vals[0] <= Vals[1]);
                 break;
         }
@@ -334,21 +333,5 @@ public class Interpreter(List<IFileLine> TheCode, TextReader ConsoleIn, TextWrit
         } while (Input == null);
 
         return Input;
-    }
-
-    private void CheckLength(int CorrectL, Operation ToCheck)
-    {
-        if (CorrectL != ToCheck.EntryPointers.Count)
-        {
-            throw new Exception("Gave insufficient/too many pointers or values.");
-        }
-    }
-
-    private void CheckLength(int CorrectL, int CorrectL2, Operation ToCheck)
-    {
-        if (CorrectL != ToCheck.EntryPointers.Count && CorrectL2 != ToCheck.EntryPointers.Count)
-        {
-            throw new Exception("Gave insufficient/too many pointers or values.");
-        }
     }
 }

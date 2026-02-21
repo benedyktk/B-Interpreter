@@ -4,15 +4,17 @@ public interface IFileLine;
 
 public enum OperationCode
 {
-    SubDone = -10,
-    SubRead = -9,
-    Remove = -8,
-    HasVal = -7,
-    ExceptHandle = -6,
-    ReadDone = -5,
-    ReadString = -4,
-    ReadInt = -3,
-    Write = -2,
+    SubDone = -12,
+    SubRead = -11,
+    Remove = -10,
+    HasVal = -9,
+    ExceptSend = -8,
+    ExceptAdd = -7,
+    ReadDone = -6,
+    ReadString = -5,
+    ReadInt = -4,
+    NewLine = -3,
+    WriteS = -2,
     Assign = -1,
     Plus = 0,
     Minus = 1,
@@ -26,6 +28,8 @@ public enum OperationCode
     BitwiseNot = 9,
     LogicalNot = 10,
     Random = 11,
+    LeftShift = 12,
+    RightShift = 13,
     Equal = 16,
     NotEqual = 17,
     Greater = 18,
@@ -34,7 +38,7 @@ public enum OperationCode
     LesserOrEqual = 21,
 }
 
-public record Operation(List<Pointer> EntryPointers, Pointer PointerDest, OperationCode OpCode) : IFileLine
+public record Operation(Pointer[] EntryPointers, Pointer PointerDest, OperationCode OpCode) : IFileLine
 {
     public override string ToString()
     {
@@ -48,30 +52,20 @@ public record Operation(List<Pointer> EntryPointers, Pointer PointerDest, Operat
                 return "fremove(" + EntryPointers[0] + ")";
             case OperationCode.HasVal:
                 return PointerDest + " = fhasval(" + EntryPointers[0] + ")";
-            case OperationCode.ExceptHandle:
-                if (EntryPointers.Count == 0)
-                {
-                    return "fexceptsend()";
-                }
-                else
-                {
-                    return "fexceptadd(" + EntryPointers[0] + ")";
-                }
+            case OperationCode.ExceptSend:
+                return "fexceptsend()";
+            case OperationCode.ExceptAdd:
+                return "fexceptadd(" + EntryPointers[0] + ")";
             case OperationCode.ReadDone:
                 return PointerDest + " = freaddone()";
             case OperationCode.ReadString:
                 return PointerDest + " = freadstring()";
             case OperationCode.ReadInt:
                 return PointerDest + " = freadint()";
-            case OperationCode.Write:
-                if (EntryPointers.Count == 0)
-                {
-                    return "fwrite()";
-                }
-                else
-                {
-                    return "fwrite(" + EntryPointers[0] + ")";
-                }
+            case OperationCode.NewLine:
+                return "fnewline()";
+            case OperationCode.WriteS:
+                return "fwrite(" + EntryPointers[0] + ")";
             case OperationCode.Assign:
                 return PointerDest + " = " + EntryPointers[0];
             case OperationCode.Plus:
@@ -98,6 +92,10 @@ public record Operation(List<Pointer> EntryPointers, Pointer PointerDest, Operat
                 return PointerDest + " = !" + EntryPointers[0];
             case OperationCode.Random:
                 return PointerDest + " = r" + EntryPointers[0];
+            case OperationCode.LeftShift:
+                return PointerDest + " = " + EntryPointers[0] + " << " + EntryPointers[1];
+            case OperationCode.RightShift:
+                return PointerDest + " = " + EntryPointers[0] + " >> " + EntryPointers[1];
             case OperationCode.Equal:
                 return PointerDest + " = " + EntryPointers[0] + " == " + EntryPointers[1];
             case OperationCode.NotEqual:
@@ -126,14 +124,21 @@ public record Jump(IJumpSpot Spot, Pointer ConditionPointer, bool Opposite) : IF
     }
 }
 
-public record FunctionCall(List<Pointer> EntryPointers, Pointer? ExitPointer, IJumpSpot RunLine) : IFileLine
+public record FunctionCall(Pointer[] EntryPointers, int RequiredAmount, Pointer? ExitPointer, IJumpSpot RunLine) : IFileLine
 {
     public override string ToString()
     {
         string Insides = "";
-        foreach (var P in EntryPointers)
+        for (int i = 0; i < RequiredAmount; i++)
         {
-            Insides += P + ",";
+            if (i < EntryPointers.Length)
+            {
+                Insides += (EntryPointers[i] + ",");
+            }
+            else
+            {
+                Insides += "null,";
+            }
         }
         string Body = "fcall(" + Insides + RunLine + ")";
         if (ExitPointer == null)
