@@ -250,7 +250,7 @@ public static class Compiler
                         {
                             throw new Exception("Invalid non-constant definition at line " + Operative);
                         }
-                        if (PointerB.type == PointerType.Function || PointerB.type == PointerType.FunctionArray)
+                        if (PointerB.type == PointerType.Function || PointerB.type == PointerType.FunctionArray || PointerB.type == PointerType.Constant)
                         {
                             throw new Exception("Attempted defintion of pointer as function-type pointer at line " + Operative);
                         }
